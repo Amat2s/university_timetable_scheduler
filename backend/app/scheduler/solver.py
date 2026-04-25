@@ -1,13 +1,34 @@
 from ortools.sat.python import cp_model
 import pandas as pd
+import itertools
 
 DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
 
 LECTURE_ROOMS = ['L1', 'L2']
 TUTORIAL_ROOMS = ['T1', 'T2', 'T3', 'T4', 'T5', 'T6']
 
-LECTURE_SLOTS = [0, 1, 2, 3] # Assuming 4 lecture slots per day, 2 hours each
+LECTURE_SLOTS = [0, 1, 2, 3, 4, 5, 6] # Assuming 7 lecture slots per day, 2 hours each
 TUTORIAL_SLOTS = [0, 1, 2, 3, 4, 5, 6, 7] # Assuming 8 tutorial slots per day, 1 hour each
+
+LECTURE_TO_TUT_SLOTS = {
+    0: [0, 1], # Lecture slot 0 blocks tutorial slots 0 and 1
+    1: [1, 2], # Lecture slot 1 blocks tutorial slots 1 and 2
+    2: [2, 3], # Lecture slot 2 blocks tutorial slots 2 and 3
+    3: [3, 4], # Lecture slot 3 blocks tutorial slots 3 and 4
+    4: [4, 5], # Lecture slot 4 blocks tutorial slots 4 and 5
+    5: [5, 6], # Lecture slot 5 blocks tutorial slots 5 and 6
+    6: [6, 7], # Lecture slot 6 blocks tutorial slots 6 and 7
+}
+
+LECTURE_TO_LECTURE_SLOTS = {
+    0: [0, 1], # Lecture slot 0 blocks lecture slots 0 and 1
+    1: [1, 2], # Lecture slot 1 blocks lecture slots 1 and 2
+    2: [2, 3], # Lecture slot 2 blocks lecture slots 2 and 3
+    3: [3, 4], # Lecture slot 3 blocks lecture slots 3 and 4
+    4: [4, 5], # Lecture slot 4 blocks lecture slots 4 and 5
+    5: [5, 6], # Lecture slot 5 blocks lecture slots 5 and 6
+    6: [6],    # Lecture slot 6 blocks lecture slot 6
+}
 
 COURSES = [
     # ── Theology ───────────────────────────────────────────────────────────
@@ -30,13 +51,6 @@ COURSES = [
     {"course_id": "PHI201",  "lecturer": "Dr_Socrates",  "tutorial_groups": 3},
     {"course_id": "PHI301",  "lecturer": "Dr_Socrates",  "tutorial_groups": 3},
 ]
-
-LECTURE_TO_TUT_SLOTS = {
-    0: [0, 1], # Lecture slot 0 blocks tutorial slots 0 and 1
-    1: [2, 3], # Lecture slot 1 blocks tutorial slots 2 and 3
-    2: [4, 5], # Lecture slot 2 blocks tutorial slots 4 and 5
-    3: [6, 7], # Lecture slot 3 blocks tutorial slots 6 and 7
-}
 
 def get_tut_groups(course):
     return [f"{course['course_id']}_T{i+1}" for i in range(course['tutorial_groups'])]
@@ -71,6 +85,23 @@ def solve():
             for room in LECTURE_ROOMS
         )
 
+    for day in DAYS:
+        for slot in LECTURE_SLOTS:
+            for lecture in set(c['lecturer'] for c in COURSES):
+                # A lecturer can only teach one thing at a time (lecture or tutorial)
+                model.add_at_most_one(itertools.chain((
+                    lecture_vars[(c['course_id'], day, slot, room)]
+                    for c in COURSES if c['lecturer'] == lecture
+                    for room in LECTURE_ROOMS 
+                    ), (
+                    tutorial_vars[(c['course_id'], tut_group, day, tut_slot, room)]
+                    for c in COURSES if c['lecturer'] == lecture
+                    for tut_group in get_tut_groups(c)
+                    for tut_slot in LECTURE_TO_TUT_SLOTS[slot]
+                    for room in TUTORIAL_ROOMS
+                    ))
+                )
+
     for course in COURSES:
         for tut_group in get_tut_groups(course):
             # Each tutorial group must have exactly one tutorial
@@ -84,9 +115,11 @@ def solve():
     # No lecture room can be double booked
     for day in DAYS:
         for slot in LECTURE_SLOTS:
+            blocked_lec_slots = LECTURE_TO_LECTURE_SLOTS[slot]
             for room in LECTURE_ROOMS:
                 model.add_at_most_one(
-                    lecture_vars[(course['course_id'], day, slot, room)] 
+                    lecture_vars[(course['course_id'], day, blocked_lec_slot, room)] 
+                    for blocked_lec_slot in blocked_lec_slots
                     for course in COURSES
                 )
 
@@ -127,6 +160,23 @@ def solve():
                     for lec_var in lec_vars:
                         for tut_var in tut_vars:
                             model.add(lec_var + tut_var <= 1)
+
+    # no lecturer clash (lecture blocks lecture slots)
+    for day in DAYS:
+        for course in COURSES:
+            lecturer = course['lecturer']
+            same_lecturer_courses = [c for c in COURSES if c['lecturer'] == lecturer]
+            for slot in LECTURE_SLOTS:
+                for blocked_lec_slots in LECTURE_TO_LECTURE_SLOTS[slot]:
+                    for lec_room1 in LECTURE_ROOMS:
+                        for lec_room2 in LECTURE_ROOMS:
+                            for c1 in same_lecturer_courses:
+                                for c2 in same_lecturer_courses:
+                                    if c1['course_id'] != c2['course_id']:
+                                        model.add(
+                                            lecture_vars[(c1['course_id'], day, slot, lec_room1)] + 
+                                            lecture_vars[(c2['course_id'], day, blocked_lec_slots, lec_room2)] <= 1
+                                        )
     
     
     for course in COURSES:
@@ -166,40 +216,62 @@ def solve():
     print(f"Solver status: {solver.StatusName(status)}")
 
     if status in (cp_model.FEASIBLE, cp_model.OPTIMAL):
-    
-        # ── Lectures ──────────────────────────────────────────────────────────
+
+    # ── Collect results ────────────────────────────────────────────────────
         lecture_rows = []
         for (course_id, day, slot, room), var in lecture_vars.items():
             if solver.value(var):
                 lecture_rows.append({
-                    "Course":   course_id,
-                    "Day":      day,
-                    "Start":    f"{slot * 2 + 9}:00",
-                    "End":      f"{slot * 2 + 11}:00",
-                    "Room":     room,
+                    "Time":  slot,
+                    "Day":   day,
+                    "Room":  room,
+                    "Event": f"{course_id}",
+                    "Lec": True,
                 })
 
-        # ── Tutorials ─────────────────────────────────────────────────────────
         tut_rows = []
         for (course_id, group, day, slot, room), var in tutorial_vars.items():
             if solver.value(var):
                 tut_rows.append({
-                    "Course":   course_id,
-                    "Group":    group,
-                    "Day":      day,
-                    "Start":    f"{slot + 9}:00",
-                    "End":      f"{slot + 10}:00",
-                    "Room":     room,
+                    "Time":  slot,
+                    "Day":   day,
+                    "Room":  room,
+                    "Event": f"{group}",
+                    "Lec": False,
                 })
 
-        df_lectures  = pd.DataFrame(lecture_rows).sort_values(["Day", "Start"])
-        df_tutorials = pd.DataFrame(tut_rows).sort_values(["Day", "Course", "Start"])
+        all_rows = lecture_rows + tut_rows
 
-        print("\n── Lectures ──────────────────────────────────────────")
-        print(df_lectures.to_string(index=False))
+        # ── Build multi-column table ───────────────────────────────────────────
+        all_rooms = LECTURE_ROOMS + TUTORIAL_ROOMS
+        time_slots = (
+            [f"{h}:00–{h+1}:00" for h in range(9, 17)]
+        )
 
-        print("\n── Tutorials ─────────────────────────────────────────")
-        print(df_tutorials.to_string(index=False))
+        # Build multi-index columns: (Day, Room)
+        columns = pd.MultiIndex.from_product([DAYS, all_rooms], names=["Day", "Room"])
+        df = pd.DataFrame("", index=time_slots, columns=columns)
+        df.index.name = "Time"
+
+        for row in all_rows:
+            day  = row["Day"]
+            room = row["Room"]
+            time = row["Time"]
+            timeFmt = f"{9 + time}:00–{10 + time}:00"
+            timeFmtPlusOne = f"{10 + time}:00–{11 + time}:00"
+            if (day, room) in df.columns:
+                current = df.loc[timeFmt, (day, room)]
+                df.loc[timeFmt, (day, room)] = row["Event"] if current == "" else current + "\n" + row["Event"]
+                if row["Lec"]:
+                    df.loc[timeFmtPlusOne, (day, room)] = row['Event'] if df.loc[timeFmtPlusOne, (day, room)] == "" else df.loc[timeFmtPlusOne, (day, room)] + "\n" + row['Event']
+
+        # ── Print ──────────────────────────────────────────────────────────────
+        pd.set_option("display.max_columns", None)
+        pd.set_option("display.width", 100)
+        pd.set_option("display.max_colwidth", 30)
+
+        df.to_excel("backend/app/scheduler/timetable.xlsx", sheet_name="Timetable")
+        print("Timetable saved to timetable.xlsx")
 
     else:
         print("No solution found — check your constraints.")
