@@ -1,0 +1,11 @@
+# Python and environment artifacts
+**/__pycache__/**
+**/.venv/**
+**/venv/**
+
+# Dependency folders
+node_modules/
+
+# Build and generated output
+dist/
+build/
