@@ -58,6 +58,15 @@ def get_tut_groups(course):
 def solve():
     model = cp_model.CpModel()
 
+    # Variables
+
+    """
+    VARIABLES:
+    1. lecture_vars[(course_id, day, slot, room)] = 1 if course_id has a lecture at that time and place, 0 otherwise
+    2. tutorial_vars[(course_id, tut_group, day, slot, room)] = 1 if tut_group of course_id has a tutorial at that time and place, 0 otherwise
+    
+    """
+
     lecture_vars = {}
     for course in COURSES:
         for day in DAYS:
@@ -76,8 +85,30 @@ def solve():
                         tutorial_vars[key] = model.new_bool_var(f"tut_{key}")
     
     # Constraints
+
+    """ 
+    ALL CONSTRAINTS:
+
+    ROOM CONSTRAINTS (RC):
+    1. No room can host two events at the same time (lecture or tutorial)
+    2. Lectures take 2 hours, so they block two consecutive lecture slots in the same room
+    3. Each room can only hold a certain number of students (TODO: add capacity constraints)
+
+    -LECTURER CONSTRAINTS (LC):
+    1. No lecturer can teach two classes at the same time (lecture or tutorial) (S)
+    
+    -STUDENT CONSTRAINTS (SC):
+    1. No student can attend two classes at the same time (lecture or tutorial) (TODO: add student enrollment data and constraints)
+    
+    -COURSE CONSTRAINTS (CC):
+    1. Each course must have exactly one lecture per week (S)
+    2. Each tutorial group must have exactly one tutorial per week (S)
+    
+    """
+
+    # CC
     for course in COURSES:
-        # Each course must have exactly one lecture
+        # CC1
         model.add_exactly_one(
             lecture_vars[(course['course_id'], day, slot, room)] 
             for day in DAYS 
@@ -85,10 +116,20 @@ def solve():
             for room in LECTURE_ROOMS
         )
 
+        # CC2
+        for tut_group in get_tut_groups(course):
+            # Each tutorial group must have exactly one tutorial
+            model.add_exactly_one(
+                tutorial_vars[(course['course_id'], tut_group, day, slot, room)] 
+                for day in DAYS 
+                for slot in TUTORIAL_SLOTS 
+                for room in TUTORIAL_ROOMS
+            )
+
+    # LC1
     for day in DAYS:
         for slot in LECTURE_SLOTS:
             for lecture in set(c['lecturer'] for c in COURSES):
-                # A lecturer can only teach one thing at a time (lecture or tutorial)
                 model.add_at_most_one(itertools.chain((
                     lecture_vars[(c['course_id'], day, slot, room)]
                     for c in COURSES if c['lecturer'] == lecture
@@ -101,18 +142,8 @@ def solve():
                     for room in TUTORIAL_ROOMS
                     ))
                 )
-
-    for course in COURSES:
-        for tut_group in get_tut_groups(course):
-            # Each tutorial group must have exactly one tutorial
-            model.add_exactly_one(
-                tutorial_vars[(course['course_id'], tut_group, day, slot, room)] 
-                for day in DAYS 
-                for slot in TUTORIAL_SLOTS 
-                for room in TUTORIAL_ROOMS
-            )
     
-    # No lecture room can be double booked
+    # RC1 for lectures and RC2
     for day in DAYS:
         for slot in LECTURE_SLOTS:
             blocked_lec_slots = LECTURE_TO_LECTURE_SLOTS[slot]
@@ -123,7 +154,7 @@ def solve():
                     for course in COURSES
                 )
 
-    # No tutorial room can be double booked
+    # RC1 for tutorials
     for day in DAYS:
         for slot in TUTORIAL_SLOTS:
             for room in TUTORIAL_ROOMS:
@@ -132,52 +163,7 @@ def solve():
                     for course in COURSES 
                     for tut_group in get_tut_groups(course)
                 )
-
-    # No lecturer clash (lecture blocks tutorial slots)
-    for day in DAYS:
-        for course in COURSES:
-            lecturer = course['lecturer']
-            same_lecturer_courses = [c for c in COURSES if c['lecturer'] == lecturer]
-            for slot in LECTURE_SLOTS:
-                model.add_at_most_one(
-                    lecture_vars[(c['course_id'], day, slot, room)]
-                    for c in same_lecturer_courses
-                    for room in LECTURE_ROOMS
-                )
-                blocked_tut_slots = LECTURE_TO_TUT_SLOTS[slot]
-                for tut_slot in blocked_tut_slots:
-                    lec_vars = [
-                        lecture_vars[(c['course_id'], day, slot, room)] 
-                        for c in same_lecturer_courses 
-                        for room in LECTURE_ROOMS
-                    ]
-                    tut_vars = [
-                        tutorial_vars[(c['course_id'], tut_group, day, tut_slot, room)] 
-                        for c in same_lecturer_courses 
-                        for tut_group in get_tut_groups(c)
-                        for room in TUTORIAL_ROOMS
-                    ]
-                    for lec_var in lec_vars:
-                        for tut_var in tut_vars:
-                            model.add(lec_var + tut_var <= 1)
-
-    # no lecturer clash (lecture blocks lecture slots)
-    for day in DAYS:
-        for course in COURSES:
-            lecturer = course['lecturer']
-            same_lecturer_courses = [c for c in COURSES if c['lecturer'] == lecturer]
-            for slot in LECTURE_SLOTS:
-                for blocked_lec_slots in LECTURE_TO_LECTURE_SLOTS[slot]:
-                    for lec_room1 in LECTURE_ROOMS:
-                        for lec_room2 in LECTURE_ROOMS:
-                            for c1 in same_lecturer_courses:
-                                for c2 in same_lecturer_courses:
-                                    if c1['course_id'] != c2['course_id']:
-                                        model.add(
-                                            lecture_vars[(c1['course_id'], day, slot, lec_room1)] + 
-                                            lecture_vars[(c2['course_id'], day, blocked_lec_slots, lec_room2)] <= 1
-                                        )
-    
+       
     
     for course in COURSES:
         for group in get_tut_groups(course):
