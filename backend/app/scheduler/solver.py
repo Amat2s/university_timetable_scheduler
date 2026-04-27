@@ -131,7 +131,7 @@ def solve():
     1. No lecturer can teach two classes at the same time (lecture or tutorial) (S)
     
     -STUDENT CONSTRAINTS (SC):
-    1. No student can attend two classes at the same time (lecture or tutorial) (TODO: add student enrollment data and constraints)
+    1. No student can attend two classes at the same time (lecture or tutorial) (S)
     
     -COURSE CONSTRAINTS (CC):
     1. Each course must have exactly one lecture per week (S)
