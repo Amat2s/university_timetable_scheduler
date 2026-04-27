@@ -1,6 +1,28 @@
 from ortools.sat.python import cp_model
 import pandas as pd
 import itertools
+import random
+
+YEAR_1_STUDENTS = [
+    "Alice", "Ben", "Clara", "David", "Emma",
+    "Finn", "Grace", "Henry", "Isla", "Jack",
+    "Kate", "Liam", "Mia", "Noah", "Olivia",
+    "Peter", "Quinn", "Rose", "Sam", "Tara",
+]
+
+YEAR_2_STUDENTS = [
+    "Adam", "Bella", "Chris", "Diana", "Ethan",
+    "Fiona", "George", "Hannah", "Ivan", "Julia",
+    "Kevin", "Laura", "Mark", "Nina", "Oscar",
+    "Paula", "Ryan", "Sofia", "Tom", "Uma",
+]
+
+YEAR_3_STUDENTS = [
+    "Aaron", "Beth", "Carl", "Dora", "Eli",
+    "Faith", "Glen", "Hope", "Ian", "Jane",
+    "Kyle", "Luna", "Max", "Nora", "Owen",
+    "Pam", "Reed", "Sara", "Todd", "Vera",
+]
 
 DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
 
@@ -32,25 +54,32 @@ LECTURE_TO_LECTURE_SLOTS = {
 
 COURSES = [
     # ── Theology ───────────────────────────────────────────────────────────
-    {"course_id": "THEO101", "lecturer": "Dr_Augustine", "tutorial_groups": 3},
-    {"course_id": "THEO201", "lecturer": "Dr_Augustine", "tutorial_groups": 3},
-    {"course_id": "THEO301", "lecturer": "Dr_Augustine", "tutorial_groups": 3},
+    {"course_id": "THEO101", "lecturer": "Dr_Augustine", "tutorial_groups": 3, "students": YEAR_1_STUDENTS},
+    {"course_id": "THEO201", "lecturer": "Dr_Augustine", "tutorial_groups": 3, "students": YEAR_2_STUDENTS},
+    {"course_id": "THEO301", "lecturer": "Dr_Augustine", "tutorial_groups": 3, "students": YEAR_3_STUDENTS},
 
     # ── Literature ─────────────────────────────────────────────────────────
-    {"course_id": "LIT101",  "lecturer": "Dr_Shelley",   "tutorial_groups": 3},
-    {"course_id": "LIT201",  "lecturer": "Dr_Shelley",   "tutorial_groups": 3},
-    {"course_id": "LIT301",  "lecturer": "Dr_Shelley",   "tutorial_groups": 3},
+    {"course_id": "LIT101",  "lecturer": "Dr_Shelley",   "tutorial_groups": 3, "students": YEAR_1_STUDENTS},
+    {"course_id": "LIT201",  "lecturer": "Dr_Shelley",   "tutorial_groups": 3, "students": YEAR_2_STUDENTS},
+    {"course_id": "LIT301",  "lecturer": "Dr_Shelley",   "tutorial_groups": 3, "students": YEAR_3_STUDENTS},
 
     # ── History ────────────────────────────────────────────────────────────
-    {"course_id": "HIS101",  "lecturer": "Dr_Herodotus", "tutorial_groups": 3},
-    {"course_id": "HIS201",  "lecturer": "Dr_Herodotus", "tutorial_groups": 3},
-    {"course_id": "HIS301",  "lecturer": "Dr_Herodotus", "tutorial_groups": 3},
+    {"course_id": "HIS101",  "lecturer": "Dr_Herodotus", "tutorial_groups": 3, "students": YEAR_1_STUDENTS},
+    {"course_id": "HIS201",  "lecturer": "Dr_Herodotus", "tutorial_groups": 3, "students": YEAR_2_STUDENTS},
+    {"course_id": "HIS301",  "lecturer": "Dr_Herodotus", "tutorial_groups": 3, "students": YEAR_3_STUDENTS},
 
     # ── Philosophy ─────────────────────────────────────────────────────────
-    {"course_id": "PHI101",  "lecturer": "Dr_Socrates",  "tutorial_groups": 3},
-    {"course_id": "PHI201",  "lecturer": "Dr_Socrates",  "tutorial_groups": 3},
-    {"course_id": "PHI301",  "lecturer": "Dr_Socrates",  "tutorial_groups": 3},
+    {"course_id": "PHI101",  "lecturer": "Dr_Socrates",  "tutorial_groups": 3, "students": YEAR_1_STUDENTS},
+    {"course_id": "PHI201",  "lecturer": "Dr_Socrates",  "tutorial_groups": 3, "students": YEAR_2_STUDENTS},
+    {"course_id": "PHI301",  "lecturer": "Dr_Socrates",  "tutorial_groups": 3, "students": YEAR_3_STUDENTS},
 ]
+
+def assign_students(course):
+    groups = get_tut_groups(course)
+    assignment = {}
+    for student in course["students"]:
+        assignment[student] = random.choice(groups)
+    return assignment
 
 def get_tut_groups(course):
     return [f"{course['course_id']}_T{i+1}" for i in range(course['tutorial_groups'])]
@@ -83,6 +112,10 @@ def solve():
                     for room in TUTORIAL_ROOMS:
                         key = (course['course_id'], tut_group, day, slot, room)
                         tutorial_vars[key] = model.new_bool_var(f"tut_{key}")
+
+    student_assignments = {}
+    for course in COURSES:
+        student_assignments[course['course_id']] = assign_students(course)
     
     # Constraints
 
@@ -129,15 +162,33 @@ def solve():
     # LC1
     for day in DAYS:
         for slot in LECTURE_SLOTS:
-            for lecture in set(c['lecturer'] for c in COURSES):
+            for lecturer in set(c['lecturer'] for c in COURSES):
                 model.add_at_most_one(itertools.chain((
-                    lecture_vars[(c['course_id'], day, slot, room)]
-                    for c in COURSES if c['lecturer'] == lecture
+                    lecture_vars[(c['course_id'], day, lec_slot, room)]
+                    for c in COURSES if c['lecturer'] == lecturer
+                    for lec_slot in LECTURE_TO_LECTURE_SLOTS[slot]
                     for room in LECTURE_ROOMS 
                     ), (
                     tutorial_vars[(c['course_id'], tut_group, day, tut_slot, room)]
-                    for c in COURSES if c['lecturer'] == lecture
+                    for c in COURSES if c['lecturer'] == lecturer
                     for tut_group in get_tut_groups(c)
+                    for tut_slot in LECTURE_TO_TUT_SLOTS[slot]
+                    for room in TUTORIAL_ROOMS
+                    ))
+                )
+    
+    # SC1
+    for student in YEAR_1_STUDENTS + YEAR_2_STUDENTS + YEAR_3_STUDENTS:
+        for day in DAYS:
+            for slot in LECTURE_SLOTS:
+                model.add_at_most_one(itertools.chain((
+                    lecture_vars[(c['course_id'], day, lec_slot, room)]
+                    for c in COURSES if student in c['students']
+                    for lec_slot in LECTURE_TO_LECTURE_SLOTS[slot]
+                    for room in LECTURE_ROOMS 
+                    ), (
+                    tutorial_vars[(c['course_id'], student_assignments[c['course_id']][student], day, tut_slot, room)]
+                    for c in COURSES if student in c['students']
                     for tut_slot in LECTURE_TO_TUT_SLOTS[slot]
                     for room in TUTORIAL_ROOMS
                     ))
