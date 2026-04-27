@@ -90,8 +90,8 @@ def solve():
     ALL CONSTRAINTS:
 
     ROOM CONSTRAINTS (RC):
-    1. No room can host two events at the same time (lecture or tutorial)
-    2. Lectures take 2 hours, so they block two consecutive lecture slots in the same room
+    1. No room can host two events at the same time (lecture or tutorial) (S)
+    2. Lectures take 2 hours, so they block two consecutive lecture slots in the same room (S)
     3. Each room can only hold a certain number of students (TODO: add capacity constraints)
 
     -LECTURER CONSTRAINTS (LC):
@@ -163,38 +163,7 @@ def solve():
                     for course in COURSES 
                     for tut_group in get_tut_groups(course)
                 )
-       
-    
-    for course in COURSES:
-        for group in get_tut_groups(course):
-
-            # Each tutorial group must be scheduled exactly once
-            model.add_exactly_one(
-                tutorial_vars[(course['course_id'], group, day, slot, room)] 
-                for day in DAYS 
-                for slot in TUTORIAL_SLOTS 
-                for room in TUTORIAL_ROOMS
-            )
-
-            # Tut group can't attend tut if lecture is scheduled at the same time
-            for day in DAYS:
-                for lec_slot in LECTURE_SLOTS:
-                    blocked_tut_slots = LECTURE_TO_TUT_SLOTS[lec_slot]
-                    for tut_slot in blocked_tut_slots:
-                        for lec_room in LECTURE_ROOMS:
-                            for tut_room in TUTORIAL_ROOMS:
-                                model.add(
-                                    lecture_vars[(course['course_id'], day, lec_slot, lec_room)] + 
-                                    tutorial_vars[(course['course_id'], group, day, tut_slot, tut_room)] <= 1
-                                )
-                # No tut group can attend two tuts at the same time
-                for tut_slot in TUTORIAL_SLOTS:
-                    model.add_at_most_one(
-                        tutorial_vars[(course['course_id'], group, day, slot, room)] 
-                        for room in TUTORIAL_ROOMS
-                    )
-                
-            
+             
 
     # Solve the model
     solver = cp_model.CpSolver()
