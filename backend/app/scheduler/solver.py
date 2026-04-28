@@ -29,8 +29,8 @@ DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
 LECTURE_ROOMS = ['L1', 'L2']
 TUTORIAL_ROOMS = ['T1', 'T2', 'T3', 'T4', 'T5', 'T6']
 
-LECTURE_SLOTS = [0, 1, 2, 3, 4, 5, 6] # Assuming 7 lecture slots per day, 2 hours each
-TUTORIAL_SLOTS = [0, 1, 2, 3, 4, 5, 6, 7] # Assuming 8 tutorial slots per day, 1 hour each
+LECTURE_SLOTS = [0, 1, 2, 3, 4, 5] # Assuming 6 lecture slots per day, 2 hours each
+TUTORIAL_SLOTS = [0, 1, 2, 3, 4, 5, 6] # Assuming 7 tutorial slots per day, 1 hour each
 
 LECTURE_TO_TUT_SLOTS = {
     0: [0, 1], # Lecture slot 0 blocks tutorial slots 0 and 1
@@ -39,7 +39,6 @@ LECTURE_TO_TUT_SLOTS = {
     3: [3, 4], # Lecture slot 3 blocks tutorial slots 3 and 4
     4: [4, 5], # Lecture slot 4 blocks tutorial slots 4 and 5
     5: [5, 6], # Lecture slot 5 blocks tutorial slots 5 and 6
-    6: [6, 7], # Lecture slot 6 blocks tutorial slots 6 and 7
 }
 
 LECTURE_TO_LECTURE_SLOTS = {
@@ -48,8 +47,7 @@ LECTURE_TO_LECTURE_SLOTS = {
     2: [2, 3], # Lecture slot 2 blocks lecture slots 2 and 3
     3: [3, 4], # Lecture slot 3 blocks lecture slots 3 and 4
     4: [4, 5], # Lecture slot 4 blocks lecture slots 4 and 5
-    5: [5, 6], # Lecture slot 5 blocks lecture slots 5 and 6
-    6: [6],    # Lecture slot 6 blocks lecture slot 6
+    5: [5], # Lecture slot 5 blocks lecture slot 5
 }
 
 COURSES = [
@@ -136,10 +134,11 @@ def solve():
     -COURSE CONSTRAINTS (CC):
     1. Each course must have exactly one lecture per week (S)
     2. Each tutorial group must have exactly one tutorial per week (S)
+    3. Lectures cannot start in slot 2, for lunch break ()
     
     """
 
-    # CC
+    # CC12
     for course in COURSES:
         # CC1
         model.add_exactly_one(
@@ -158,6 +157,13 @@ def solve():
                 for slot in TUTORIAL_SLOTS 
                 for room in TUTORIAL_ROOMS
             )
+    
+    # CC3
+    for course in COURSES:
+        for day in DAYS:
+            for room in LECTURE_ROOMS:
+                model.add(
+                    lecture_vars[(course['course_id'], day, 2, room)] == 0)
 
     # LC1
     for day in DAYS:
@@ -222,66 +228,104 @@ def solve():
     print(f"Solver status: {solver.StatusName(status)}")
 
     if status in (cp_model.FEASIBLE, cp_model.OPTIMAL):
-
-    # ── Collect results ────────────────────────────────────────────────────
         lecture_rows = []
         for (course_id, day, slot, room), var in lecture_vars.items():
             if solver.value(var):
                 lecture_rows.append({
-                    "Time":  slot,
-                    "Day":   day,
-                    "Room":  room,
-                    "Event": f"{course_id}",
-                    "Lec": True,
+                    "time_slot": slot,
+                    "time_start": f"{9 + slot}:00",
+                    "time_end":   f"{11 + slot}:00",
+                    "day":        day,
+                    "room":       room,
+                    "event":      course_id,
+                    "type":       "lecture",
                 })
 
         tut_rows = []
         for (course_id, group, day, slot, room), var in tutorial_vars.items():
             if solver.value(var):
                 tut_rows.append({
-                    "Time":  slot,
-                    "Day":   day,
-                    "Room":  room,
-                    "Event": f"{group}",
-                    "Lec": False,
+                    "time_slot": slot,
+                    "time_start": f"{9 + slot}:00",
+                    "time_end":   f"{10 + slot}:00",
+                    "day":        day,
+                    "room":       room,
+                    "event":      group,
+                    "type":       "tutorial",
                 })
 
-        all_rows = lecture_rows + tut_rows
-
-        # ── Build multi-column table ───────────────────────────────────────────
-        all_rooms = LECTURE_ROOMS + TUTORIAL_ROOMS
-        time_slots = (
-            [f"{h}:00–{h+1}:00" for h in range(9, 17)]
-        )
-
-        # Build multi-index columns: (Day, Room)
-        columns = pd.MultiIndex.from_product([DAYS, all_rooms], names=["Day", "Room"])
-        df = pd.DataFrame("", index=time_slots, columns=columns)
-        df.index.name = "Time"
-
-        for row in all_rows:
-            day  = row["Day"]
-            room = row["Room"]
-            time = row["Time"]
-            timeFmt = f"{9 + time}:00–{10 + time}:00"
-            timeFmtPlusOne = f"{10 + time}:00–{11 + time}:00"
-            if (day, room) in df.columns:
-                current = df.loc[timeFmt, (day, room)]
-                df.loc[timeFmt, (day, room)] = row["Event"] if current == "" else current + "\n" + row["Event"]
-                if row["Lec"]:
-                    df.loc[timeFmtPlusOne, (day, room)] = row['Event'] if df.loc[timeFmtPlusOne, (day, room)] == "" else df.loc[timeFmtPlusOne, (day, room)] + "\n" + row['Event']
-
-        # ── Print ──────────────────────────────────────────────────────────────
-        pd.set_option("display.max_columns", None)
-        pd.set_option("display.width", 100)
-        pd.set_option("display.max_colwidth", 30)
-
-        df.to_excel("backend/app/scheduler/timetable.xlsx", sheet_name="Timetable")
-        print("Timetable saved to timetable.xlsx")
-
+        return {"status": "success", "timetable": lecture_rows + tut_rows}
+    
     else:
-        print("No solution found — check your constraints.")
+        return {"status": "infeasible", "timetable": []}
 
+    
 if __name__ == "__main__":
     solve()
     
+
+
+
+### Old code for testing the solver without FastAPI
+
+
+# if status in (cp_model.FEASIBLE, cp_model.OPTIMAL):
+
+# # ── Collect results ────────────────────────────────────────────────────
+#     lecture_rows = []
+#     for (course_id, day, slot, room), var in lecture_vars.items():
+#         if solver.value(var):
+#             lecture_rows.append({
+#                 "Time":  slot,
+#                 "Day":   day,
+#                 "Room":  room,
+#                 "Event": f"{course_id}",
+#                 "Lec": True,
+#             })
+
+#     tut_rows = []
+#     for (course_id, group, day, slot, room), var in tutorial_vars.items():
+#         if solver.value(var):
+#             tut_rows.append({
+#                 "Time":  slot,
+#                 "Day":   day,
+#                 "Room":  room,
+#                 "Event": f"{group}",
+#                 "Lec": False,
+#             })
+
+#     all_rows = lecture_rows + tut_rows
+
+#     # ── Build multi-column table ───────────────────────────────────────────
+#     all_rooms = LECTURE_ROOMS + TUTORIAL_ROOMS
+#     time_slots = (
+#         [f"{h}:00–{h+1}:00" for h in range(9, 17)]
+#     )
+
+#     # Build multi-index columns: (Day, Room)
+#     columns = pd.MultiIndex.from_product([DAYS, all_rooms], names=["Day", "Room"])
+#     df = pd.DataFrame("", index=time_slots, columns=columns)
+#     df.index.name = "Time"
+
+#     for row in all_rows:
+#         day  = row["Day"]
+#         room = row["Room"]
+#         time = row["Time"]
+#         timeFmt = f"{9 + time}:00–{10 + time}:00"
+#         timeFmtPlusOne = f"{10 + time}:00–{11 + time}:00"
+#         if (day, room) in df.columns:
+#             current = df.loc[timeFmt, (day, room)]
+#             df.loc[timeFmt, (day, room)] = row["Event"] if current == "" else current + "\n" + row["Event"]
+#             if row["Lec"]:
+#                 df.loc[timeFmtPlusOne, (day, room)] = row['Event'] if df.loc[timeFmtPlusOne, (day, room)] == "" else df.loc[timeFmtPlusOne, (day, room)] + "\n" + row['Event']
+
+#     # ── Print ──────────────────────────────────────────────────────────────
+#     pd.set_option("display.max_columns", None)
+#     pd.set_option("display.width", 100)
+#     pd.set_option("display.max_colwidth", 30)
+
+#     df.to_excel("backend/app/scheduler/timetable.xlsx", sheet_name="Timetable")
+#     print("Timetable saved to timetable.xlsx")
+
+# else:
+#     print("No solution found — check your constraints.")
