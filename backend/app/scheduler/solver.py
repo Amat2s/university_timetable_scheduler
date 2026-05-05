@@ -2,22 +2,23 @@ from ortools.sat.python import cp_model
 import pandas as pd
 import itertools
 import random
+from typing import List, Dict, Optional
 
-YEAR_1_STUDENTS = [
+DEFAULT_YEAR_1_STUDENTS = [
     "Alice", "Ben", "Clara", "David", "Emma",
     "Finn", "Grace", "Henry", "Isla", "Jack",
     "Kate", "Liam", "Mia", "Noah", "Olivia",
     "Peter", "Quinn", "Rose", "Sam", "Tara",
 ]
 
-YEAR_2_STUDENTS = [
+DEFAULT_YEAR_2_STUDENTS = [
     "Adam", "Bella", "Chris", "Diana", "Ethan",
     "Fiona", "George", "Hannah", "Ivan", "Julia",
     "Kevin", "Laura", "Mark", "Nina", "Oscar",
     "Paula", "Ryan", "Sofia", "Tom", "Uma",
 ]
 
-YEAR_3_STUDENTS = [
+DEFAULT_YEAR_3_STUDENTS = [
     "Aaron", "Beth", "Carl", "Dora", "Eli",
     "Faith", "Glen", "Hope", "Ian", "Jane",
     "Kyle", "Luna", "Max", "Nora", "Owen",
@@ -50,39 +51,58 @@ LECTURE_TO_LECTURE_SLOTS = {
     5: [5], # Lecture slot 5 blocks lecture slot 5
 }
 
-COURSES = [
+DEFAULT_COURSES = [
     # ── Theology ───────────────────────────────────────────────────────────
-    {"course_id": "THEO101", "lecturer": "Dr_Augustine", "tutorial_groups": 3, "students": YEAR_1_STUDENTS},
-    {"course_id": "THEO201", "lecturer": "Dr_Augustine", "tutorial_groups": 3, "students": YEAR_2_STUDENTS},
-    {"course_id": "THEO301", "lecturer": "Dr_Augustine", "tutorial_groups": 3, "students": YEAR_3_STUDENTS},
+    {"course_id": "THEO101", "lecturer": "Dr_Augustine", "tutorial_groups": 3, "students": DEFAULT_YEAR_1_STUDENTS},
+    {"course_id": "THEO201", "lecturer": "Dr_Augustine", "tutorial_groups": 3, "students": DEFAULT_YEAR_2_STUDENTS},
+    {"course_id": "THEO301", "lecturer": "Dr_Augustine", "tutorial_groups": 3, "students": DEFAULT_YEAR_3_STUDENTS},
 
     # ── Literature ─────────────────────────────────────────────────────────
-    {"course_id": "LIT101",  "lecturer": "Dr_Shelley",   "tutorial_groups": 3, "students": YEAR_1_STUDENTS},
-    {"course_id": "LIT201",  "lecturer": "Dr_Shelley",   "tutorial_groups": 3, "students": YEAR_2_STUDENTS},
-    {"course_id": "LIT301",  "lecturer": "Dr_Shelley",   "tutorial_groups": 3, "students": YEAR_3_STUDENTS},
+    {"course_id": "LIT101",  "lecturer": "Dr_Shelley",   "tutorial_groups": 3, "students": DEFAULT_YEAR_1_STUDENTS},
+    {"course_id": "LIT201",  "lecturer": "Dr_Shelley",   "tutorial_groups": 3, "students": DEFAULT_YEAR_2_STUDENTS},
+    {"course_id": "LIT301",  "lecturer": "Dr_Shelley",   "tutorial_groups": 3, "students": DEFAULT_YEAR_3_STUDENTS},
 
     # ── History ────────────────────────────────────────────────────────────
-    {"course_id": "HIS101",  "lecturer": "Dr_Herodotus", "tutorial_groups": 3, "students": YEAR_1_STUDENTS},
-    {"course_id": "HIS201",  "lecturer": "Dr_Herodotus", "tutorial_groups": 3, "students": YEAR_2_STUDENTS},
-    {"course_id": "HIS301",  "lecturer": "Dr_Herodotus", "tutorial_groups": 3, "students": YEAR_3_STUDENTS},
+    {"course_id": "HIS101",  "lecturer": "Dr_Herodotus", "tutorial_groups": 3, "students": DEFAULT_YEAR_1_STUDENTS},
+    {"course_id": "HIS201",  "lecturer": "Dr_Herodotus", "tutorial_groups": 3, "students": DEFAULT_YEAR_2_STUDENTS},
+    {"course_id": "HIS301",  "lecturer": "Dr_Herodotus", "tutorial_groups": 3, "students": DEFAULT_YEAR_3_STUDENTS},
 
     # ── Philosophy ─────────────────────────────────────────────────────────
-    {"course_id": "PHI101",  "lecturer": "Dr_Socrates",  "tutorial_groups": 3, "students": YEAR_1_STUDENTS},
-    {"course_id": "PHI201",  "lecturer": "Dr_Socrates",  "tutorial_groups": 3, "students": YEAR_2_STUDENTS},
-    {"course_id": "PHI301",  "lecturer": "Dr_Socrates",  "tutorial_groups": 3, "students": YEAR_3_STUDENTS},
+    {"course_id": "PHI101",  "lecturer": "Dr_Socrates",  "tutorial_groups": 3, "students": DEFAULT_YEAR_1_STUDENTS},
+    {"course_id": "PHI201",  "lecturer": "Dr_Socrates",  "tutorial_groups": 3, "students": DEFAULT_YEAR_2_STUDENTS},
+    {"course_id": "PHI301",  "lecturer": "Dr_Socrates",  "tutorial_groups": 3, "students": DEFAULT_YEAR_3_STUDENTS},
 ]
 
-def assign_students(course):
+def assign_students(course: Dict) -> Dict[str, str]:
     groups = get_tut_groups(course)
     assignment = {}
-    for student in course["students"]:
-        assignment[student] = random.choice(groups)
+    for student in course.get("students", []):
+        assignment[student] = random.choice(groups) if groups else None
     return assignment
 
-def get_tut_groups(course):
-    return [f"{course['course_id']}_T{i+1}" for i in range(course['tutorial_groups'])]
+def get_tut_groups(course: Dict) -> List[str]:
+    return [f"{course['course_id']}_T{i+1}" for i in range(int(course.get('tutorial_groups', 0)))]
 
-def solve():
+def solve(courses_payload: Optional[List[Dict]] = None) -> Dict:
+    """
+    Solve timetable.
+
+    If `courses_payload` is provided, it should be a list of dicts with keys:
+      - course_id (str)
+      - lecturer (str)
+      - tutorial_groups (int)
+      - students (List[str])
+
+    Otherwise uses DEFAULT_COURSES.
+    """
+    courses = courses_payload if courses_payload is not None else DEFAULT_COURSES
+
+    all_students = []
+    for c in courses:
+        for s in c.get('students', []):
+            if s not in all_students:
+                all_students.append(s)
+
     model = cp_model.CpModel()
 
     # Variables
@@ -95,7 +115,7 @@ def solve():
     """
 
     lecture_vars = {}
-    for course in COURSES:
+    for course in courses:
         for day in DAYS:
             for slot in LECTURE_SLOTS:
                 for room in LECTURE_ROOMS:
@@ -103,7 +123,7 @@ def solve():
                     lecture_vars[key] = model.new_bool_var(f"lec_{key}")
     
     tutorial_vars = {}
-    for course in COURSES:
+    for course in courses:
         for tut_group in get_tut_groups(course):
             for day in DAYS:
                 for slot in TUTORIAL_SLOTS:
@@ -112,7 +132,7 @@ def solve():
                         tutorial_vars[key] = model.new_bool_var(f"tut_{key}")
 
     student_assignments = {}
-    for course in COURSES:
+    for course in courses:
         student_assignments[course['course_id']] = assign_students(course)
     
     # Constraints
@@ -139,7 +159,7 @@ def solve():
     """
 
     # CC12
-    for course in COURSES:
+    for course in courses:
         # CC1
         model.add_exactly_one(
             lecture_vars[(course['course_id'], day, slot, room)] 
@@ -159,7 +179,7 @@ def solve():
             )
     
     # CC3
-    for course in COURSES:
+    for course in courses:
         for day in DAYS:
             for room in LECTURE_ROOMS:
                 model.add(
@@ -168,15 +188,15 @@ def solve():
     # LC1
     for day in DAYS:
         for slot in LECTURE_SLOTS:
-            for lecturer in set(c['lecturer'] for c in COURSES):
+            for lecturer in set(c['lecturer'] for c in courses):
                 model.add_at_most_one(itertools.chain((
                     lecture_vars[(c['course_id'], day, lec_slot, room)]
-                    for c in COURSES if c['lecturer'] == lecturer
+                    for c in courses if c['lecturer'] == lecturer
                     for lec_slot in LECTURE_TO_LECTURE_SLOTS[slot]
                     for room in LECTURE_ROOMS 
                     ), (
                     tutorial_vars[(c['course_id'], tut_group, day, tut_slot, room)]
-                    for c in COURSES if c['lecturer'] == lecturer
+                    for c in courses if c['lecturer'] == lecturer
                     for tut_group in get_tut_groups(c)
                     for tut_slot in LECTURE_TO_TUT_SLOTS[slot]
                     for room in TUTORIAL_ROOMS
@@ -184,17 +204,17 @@ def solve():
                 )
     
     # SC1
-    for student in YEAR_1_STUDENTS + YEAR_2_STUDENTS + YEAR_3_STUDENTS:
+    for student in all_students:
         for day in DAYS:
             for slot in LECTURE_SLOTS:
                 model.add_at_most_one(itertools.chain((
                     lecture_vars[(c['course_id'], day, lec_slot, room)]
-                    for c in COURSES if student in c['students']
+                    for c in courses if student in c['students']
                     for lec_slot in LECTURE_TO_LECTURE_SLOTS[slot]
                     for room in LECTURE_ROOMS 
                     ), (
                     tutorial_vars[(c['course_id'], student_assignments[c['course_id']][student], day, tut_slot, room)]
-                    for c in COURSES if student in c['students']
+                    for c in courses if student in c['students']
                     for tut_slot in LECTURE_TO_TUT_SLOTS[slot]
                     for room in TUTORIAL_ROOMS
                     ))
@@ -208,7 +228,7 @@ def solve():
                 model.add_at_most_one(
                     lecture_vars[(course['course_id'], day, blocked_lec_slot, room)] 
                     for blocked_lec_slot in blocked_lec_slots
-                    for course in COURSES
+                    for course in courses
                 )
 
     # RC1 for tutorials
@@ -217,7 +237,7 @@ def solve():
             for room in TUTORIAL_ROOMS:
                 model.add_at_most_one(
                     tutorial_vars[(course['course_id'], tut_group, day, slot, room)] 
-                    for course in COURSES 
+                    for course in courses 
                     for tut_group in get_tut_groups(course)
                 )
              
