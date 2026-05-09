@@ -21,11 +21,17 @@ EXCEL_PATH = "app/scheduler/timetable.xlsx"
 
 
 # Request models
-class CoursePayload(BaseModel):
+class CourseInfo(BaseModel):
     course_id: str
-    lecturer: str
-    tutorial_groups: int = 1
-    students: List[str] = []
+    lecture: tuple[int, int]
+    seminar: tuple[int, int]
+    tutorials: List[tuple[int, int]]
+
+
+class CoursePayload(BaseModel):
+    course: CourseInfo
+    lecturer: int
+    students: List[int]
 
 
 class SolveRequest(BaseModel):
@@ -90,7 +96,7 @@ def download_timetable_get():
 @app.post("/solve")
 def run_solver(payload: SolveRequest):
     # Convert Pydantic models to plain dicts for the solver
-    courses = [c.dict() for c in payload.courses]
+    courses = [c.model_dump() for c in payload.courses]
     return solve(courses_payload=courses)
 
 

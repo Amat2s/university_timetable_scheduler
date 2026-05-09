@@ -2,11 +2,17 @@ import axios from 'axios'
 
 const API_BASE = 'http://localhost:8000'
 
-export interface CoursePayload {
+export interface CourseInfo {
   course_id: string
-  lecturer: string
-  tutorial_groups: number
-  students: string[]
+  lecture: [number, number] // [hours, cap.]
+  seminar: [number, number] // [hours, cap.]
+  tutorials: Array<[number, number]> // [hours, cap.], array length = number of tutorial groups
+}
+
+export interface CoursePayload {
+  course: CourseInfo
+  lecturer: number
+  students: number[]
 }
 
 export interface SolveRequest {
@@ -20,6 +26,7 @@ export interface TimetableEntry {
   day: string
   room: string
   event: string
+  tutorial: number
   type: 'lecture' | 'tutorial'
 }
 

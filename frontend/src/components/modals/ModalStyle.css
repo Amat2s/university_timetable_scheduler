@@ -216,6 +216,7 @@ select option {
   justify-content: center;
   z-index: 1000;
   animation: overlayIn 0.2s ease;
+  position: fixed;
 }
 
 @keyframes overlayIn {
@@ -231,7 +232,7 @@ select option {
   border-radius: 4px;
   padding: 2rem;
   width: 100%;
-  max-width: 480px;
+  max-width: 780px;
   box-shadow:
     0 20px 60px rgba(0, 0, 0, 0.7),
     0 0 0 1px rgba(201, 168, 76, 0.06);
@@ -240,6 +241,8 @@ select option {
   gap: 1rem;
   animation: modalIn 0.22s ease;
   position: relative;
+  overflow-y: auto;
+  max-height: 90vh;
 }
 
 /* decorative gold rule under heading */
@@ -322,3 +325,13 @@ hr {
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover { background: var(--crimson-light); }
+
+input[type='number']::-webkit-inner-spin-button,
+input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type='number'] {
+  -moz-appearance: textfield;
+}
